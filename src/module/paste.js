@@ -45,6 +45,7 @@ KityMinder.registerModule( "pasteModule", function () {
                             break;
                         case keys.x:
                             getNodes(km.getSelectedAncestors(),true);
+                            km.layout(300);
                             _curstatus = true;
                             break;
                         case keys.v:
@@ -53,7 +54,7 @@ KityMinder.registerModule( "pasteModule", function () {
                                 if(node){
                                     km.fire('saveScene');
                                     for(var i= 0,ni;ni=_cacheNodes[i++];){
-                                        appendChildNode(node,ni);
+                                        appendChildNode(node,ni.clone());
                                     }
                                     km.layout(300);
                                     km.select(_selectedNodes,true);

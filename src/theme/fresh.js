@@ -21,7 +21,7 @@
             'main-background': hsl(h, 33, 95),
             'main-stroke': hsl(h, 37, 60),
             'main-stroke-width': 1,
-            'main-font-size': 16,
+            'main-font-size': 14,
             'main-padding': [6, 20],
             'main-margin': 20,
             'main-radius': 3,
@@ -52,7 +52,9 @@
 
             'order-hint-area-color': hsl(h, 100, 95).set('a', 0.5),
             'order-hint-path-color': hsl(h, 100, 25),
-            'order-hint-path-width': 1
+            'order-hint-path-width': 1,
+
+            'text-selection-color': hsl(h, 100, 20)
         };
     }
 
