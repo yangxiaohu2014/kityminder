@@ -1,6 +1,6 @@
 /*!
  * ====================================================
- * kityminder - v1.1.3 - 2014-07-04
+ * kityminder - v1.1.3 - 2014-07-07
  * https://github.com/fex-team/kityminder
  * GitHub: https://github.com/fex-team/kityminder.git 
  * Copyright (c) 2014 f-cube @ FEX; Licensed MIT
@@ -14,7 +14,7 @@ var KityMinder = window.KM = window.KityMinder = function() {
         instanceId = 0,
         uuidMap = {};
     return {
-        version: '1.1.3.1',
+        version: '1.2.0',
         uuid: function(name) {
             name = name || 'unknown';
             uuidMap[name] = uuidMap[name] || 0;
@@ -1048,6 +1048,65 @@ var Minder = KityMinder.Minder = kity.createClass('KityMinder', {
 });
 
 Utils.extend(KityMinder, {
+    compatibility: function(json) {
+
+        var version = json.version || '1.1.3';
+
+        function traverse(node, fn) {
+            fn(node);
+            if (node.children) node.children.forEach(function(child) {
+                traverse(child, fn);
+            });
+        }
+
+        /**
+         * 脑图数据升级
+         * v1.1.3 => v1.2.0
+         * */
+        function c_113_120(json) {
+            // 原本的布局风格
+            var ocs = json.data.currentstyle;
+            delete json.data.currentstyle;
+
+            // 为 1.2 选择模板，同时保留老版本文件的皮肤
+            if (ocs == 'bottom') {
+                json.template = 'structure';
+                json.theme = 'snow';
+            } else if (ocs == 'default') {
+                json.template = 'default';
+                json.theme = 'classic';
+            }
+
+            traverse(json, function(node) {
+                var data = node.data;
+
+                // 升级优先级、进度图标
+                if ('PriorityIcon' in data) {
+                    data.priority = data.PriorityIcon;
+                    delete data.PriorityIcon;
+                }
+                if ('ProgressIcon' in data) {
+                    data.progress = 1 + ((data.ProgressIcon - 1) << 1);
+                    delete data.ProgressIcon;
+                }
+
+                // 删除过时属性
+                delete data.point;
+                delete data.layout;
+            });
+        }
+
+        switch (version) {
+            case '1.1.3':
+                c_113_120(json);
+            case '1.2.0':
+        }
+
+        return json;
+    }
+});
+
+Utils.extend(KityMinder, {
     _protocals: {},
     registerProtocal: function(name, protocalDeal) {
         KityMinder._protocals[name] = protocalDeal();
@@ -1102,6 +1161,7 @@ kity.extendClass(Minder, {
 
         json.template = this.getTemplate();
         json.theme = this.getTheme();
+        json.version = KityMinder.version;
 
         if (protocal) {
             return protocal.encode(json, this);
@@ -1188,19 +1248,9 @@ kity.extendClass(Minder, {
             this.removeNode(this._root.getChildren()[0]);
         }
 
-        // compality for v1.1.3
-        var ocs = json.data.currentstyle; // old current-style
-        delete json.data.currentstyle;
+        json = KityMinder.compatibility(json);
 
         importNode(this._root, json, this);
-
-        if (ocs == 'bottom') {
-            json.template = 'structure';
-            json.theme = 'snow';
-        } else if (ocs == 'default') {
-            json.template = 'default';
-            json.theme = 'classic';
-        }
 
         this.setTemplate(json.template || null);
         this.setTheme(json.theme || null);
@@ -6234,8 +6284,11 @@ KityMinder.registerModule('TextEditModule', function() {
 
                         if(selectionReadyShow){
                             textShape.setStyle('cursor', 'text');
+                            sel.clearBaseOffset();
                             receiver.updateSelection();
-
+                            setTimeout(function() {
+                                sel.setShow();
+                            }, 200);
                             km.setStatus('textedit');
 
                         }
@@ -6284,9 +6337,14 @@ KityMinder.registerModule('TextEditModule', function() {
 
                     sel.setColor(node.getStyle('text-selection-color'));
 
+                    sel.clearBaseOffset();
+
                     node.getTextShape().setStyle('cursor', 'text');
 
                     receiver.updateSelection();
+                    setTimeout(function() {
+                        sel.setShow();
+                    }, 200);
 
 
                     lastEvtPosition = e.getPosition(this.getRenderContainer());
@@ -6302,6 +6360,7 @@ KityMinder.registerModule('TextEditModule', function() {
                 }else {
                     //当有光标时，要同步选区
                     if(!sel.collapsed){
+                        sel.clearBaseOffset();
                         receiver.updateContainerRangeBySel();
                     }
 
@@ -6559,12 +6618,13 @@ Minder.Receiver = kity.createClass('Receiver', {
     },
     keyboardEvents: function(e) {
 
-        clearTimeout(this.timer);
+
         var me = this;
         var orgEvt = e.originEvent;
         var keyCode = orgEvt.keyCode;
 
         function setTextToContainer() {
+            clearTimeout(me.timer);
             if (!me.range.hasNativeRange()) {
                 return;
             }
@@ -6607,9 +6667,10 @@ Minder.Receiver = kity.createClass('Receiver', {
             me.updateSelection();
             me.timer = setTimeout(function() {
                 me.selection.setShow();
-            }, 300);
+            }, 200);
 
             me.km.setStatus('textedit');
+            me.selection.clearBaseOffset();
         }
 
 
@@ -6661,31 +6722,40 @@ Minder.Receiver = kity.createClass('Receiver', {
                 }
                 //针对按住shift+方向键进行处理
                 if(orgEvt.shiftKey && keymap.direction[keyCode] && this.selection.isShow()){
+                    if(this.selection.baseOffset === null){
+
+                        this.selection.baseOffset = this.selection.startOffset;
+                        this.selection.currentEndOffset = this.selection.endOffset;
+                    }
                     var textlength = this.textShape.getContent().length;
                     if(keymap.right  == keyCode ){
-                        var endOffset = this.selection.endOffset+1;
-                        if(endOffset > textlength){
-                            endOffset = textlength;
+                        this.selection.currentEndOffset++;
+                        if(this.selection.currentEndOffset > textlength){
+                            this.selection.currentEndOffset = textlength;
                         }
-                        this.selection.setEndOffset(endOffset);
+
                     }else if(keymap.left == keyCode){
-
-                        endOffset = this.selection.endOffset-1;
-                        if(endOffset < 0){
-                            endOffset = 0;
+                        this.selection.currentEndOffset--;
+                        if(this.selection.currentEndOffset < 0){
+                            this.selection.currentEndOffset = 0;
                         }
-                        if(endOffset <= this.selection.startOffset){
-                            if(endOffset == this.selection.startOffset){
-                                this.selection.setEndOffset(endOffset)
-                            }else{
-                                this.selection.setStartOffset(endOffset)
-                            }
 
-                        }else{
-                            this.selection.setEndOffset(endOffset);
-                        }
+                    }else if(keymap.up == keyCode){
+                        this.selection.currentEndOffset = 0;
+                        this.selection.baseOffset = this.selection.endOffset;
+                    }else{
+                        this.selection.currentEndOffset = textlength;
                     }
 
+                    if(this.selection.currentEndOffset >= this.selection.baseOffset){
+                        this.selection.setEndOffset(this.selection.currentEndOffset);
+                        if(this.selection.currentEndOffset == this.selection.baseOffset){
+                            this.selection.setStartOffset(this.selection.baseOffset);
+                        }
+                    }else{
+                        this.selection.setStartOffset(this.selection.currentEndOffset);
+                        this.selection.setEndOffset(this.selection.baseOffset);
+                    }
 
                     this.updateContainerRangeBySel();
 
@@ -6913,7 +6983,8 @@ Minder.Receiver = kity.createClass('Receiver', {
             endOffset = this.textData[this.selection.endOffset],
             width = 0;
         if (this.selection.collapsed) {
-            this.selection.updateShow(startOffset || this.textData[this.textData.length - 1], 1);
+
+            this.selection.updateShow(startOffset || this.textData[this.textData.length - 1], 2);
             return this;
         }
         if (!endOffset) {
@@ -7079,6 +7150,9 @@ Minder.Selection = kity.createClass( 'Selection', {
     },
     isHide:function(){
         return !this._show;
+    },
+    clearBaseOffset:function(){
+        this.baseOffset = this.currentEndOffset = null;
     }
 } );
 
