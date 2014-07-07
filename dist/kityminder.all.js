@@ -1312,12 +1312,12 @@ kity.extendClass(Minder, {
         if (this._fire(beforeEvent)) {
             return;
         }
-        preEvent = new MinderEvent('pre' + e.type, e, false);
-        executeEvent = new MinderEvent(e.type, e, false);
+        preEvent = new MinderEvent('pre' + e.type, e, true);
+        executeEvent = new MinderEvent(e.type, e, true);
 
-        this._fire(preEvent);
-        this._fire(executeEvent);
-        this._fire(new MinderEvent('after' + e.type, e, false));
+        this._fire(preEvent) ||
+            this._fire(executeEvent) ||
+            this._fire(new MinderEvent('after' + e.type, e, false));
 
         if (~'mousedown mouseup keydown keyup'.indexOf(e.type)) {
             this._interactChange(e);
@@ -4549,10 +4549,11 @@ KityMinder.registerModule('ProgressModule', function() {
 
             var check = new kity.Path()
                 .getDrawer()
-                    .moveTo(-3, 0)
-                    .lineTo(-1, 3)
-                    .lineTo(3, -2)
+                    .moveTo(-3, -1)
+                    .lineTo(-1, 2)
+                    .lineTo(3, -3)
                 .getPath()
+                .stroke('white', 2)
                 .setVisible(false);
 
             this.addShapes([circle, pie, check]);
@@ -5197,20 +5198,21 @@ var ViewDragger = kity.createClass("ViewDragger", {
 
     _bind: function() {
         var dragger = this,
-            isRootDrag = false,
+            isTempDrag = false,
             lastPosition = null,
             currentPosition = null;
 
-        this._minder.on('normal.mousedown readonly.mousedown readonly.touchstart', function(e) {
+        this._minder.on('normal.mousedown readonly.mousedown readonly.touchstart', function (e) {
+            e.originEvent.preventDefault(); // 阻止中键拉动
             // 点击未选中的根节点临时开启
-            if (e.getTargetNode() == this.getRoot()) {
+            if (e.getTargetNode() == this.getRoot() || e.originEvent.button == 2) {
                 lastPosition = e.getPosition();
-                isRootDrag = true;
+                isTempDrag = true;
             }
         })
 
         .on('normal.mousemove normal.touchmove', function(e) {
-            if (!isRootDrag) return;
+            if (!isTempDrag) return;
             var offset = kity.Vector.fromPoints(lastPosition, e.getPosition());
             if (offset.length() > 3) this.setStatus('hand');
         })
@@ -5241,9 +5243,9 @@ var ViewDragger = kity.createClass("ViewDragger", {
             lastPosition = null;
 
             // 临时拖动需要还原状态
-            if (isRootDrag) {
+            if (isTempDrag) {
                 dragger.setEnabled(false);
-                isRootDrag = false;
+                isTempDrag = false;
                 this.rollbackStatus();
             }
         });
@@ -5328,11 +5330,10 @@ KityMinder.registerModule('View', function() {
                     e.preventDefault();
                 }
             },
-            mousewheel: function(e) {
+            mousewheel: function (e) {
                 var dx, dy;
                 e = e.originEvent;
                 if (e.ctrlKey || e.shiftKey) return;
-
                 if ('wheelDeltaX' in e) {
 
                     dx = e.wheelDeltaX || 0;
@@ -5715,6 +5716,7 @@ KityMinder.registerModule('DragTree', function() {
         events: {
             'normal.mousedown inputready.mousedown': function(e) {
                 // 单选中根节点也不触发拖拽
+                if (e.originEvent.button) return;
                 if (e.getTargetNode() && e.getTargetNode() != this.getRoot()) {
                     dragger.dragStart(e.getPosition(this.getRenderContainer()));
                 }
@@ -5775,7 +5777,7 @@ KityMinder.registerModule('DropFile', function() {
         }
     }
 
-    function importMinderFile(minder, file) {
+    function importMinderFile(minder, file, encoding) {
         if (!file) return;
 
         var ext = /(.)\w+$/.exec(file.name);
@@ -5789,11 +5791,11 @@ KityMinder.registerModule('DropFile', function() {
         } else if ((/mmap/g).test(ext)) { // mindmanager zip
             importSync(minder, file, 'mindmanager');
         } else if ((/mm/g).test(ext)) { //freemind xml
-            importAsync(minder, file, 'freemind');
+            importAsync(minder, file, 'freemind', encoding);
         } else if (/km/.test(ext)) { // txt json
-            importAsync(minder, file, 'json');
+            importAsync(minder, file, 'json', encoding);
         } else if (/txt/.test(ext)) {
-            importAsync(minder, file, 'plain');
+            importAsync(minder, file, 'plain', encoding);
         } else {
             alert('不支持导入此类文件!');
         }
@@ -5819,12 +5821,12 @@ KityMinder.registerModule('DropFile', function() {
     }
 
     // 异步加载文件
-    function importAsync(minder, file, protocal) {
+    function importAsync(minder, file, protocal, encoding) {
         var reader = new FileReader();
-        reader.onload = function(e) {
+        reader.onload = function (e) {
             importSync(minder, e.target.result, protocal);
         };
-        reader.readAsText(file);
+        reader.readAsText(file, encoding || 'utf8');
     }
 
     function createDraft(minder) {
@@ -5833,8 +5835,8 @@ KityMinder.registerModule('DropFile', function() {
     }
 
     kity.extendClass(Minder, {
-        importFile: function(file) {
-            importMinderFile(this, file);
+        importFile: function(file, encoding) {
+            importMinderFile(this, file, encoding);
             return this;
         }
     });
@@ -6221,9 +6223,13 @@ KityMinder.registerModule('TextEditModule', function() {
                 .setEndOffset(textShape.getContent().length)
                 .setColor(color);
 
+
+
             receiver
                 .setMinderNode(node)
                 .updateContainerRangeBySel();
+
+            receiver.minderNode.setTmpData('_lastTextContent',receiver.textShape.getContent());
 
             km.setStatus('inputready');
 
@@ -6245,10 +6251,20 @@ KityMinder.registerModule('TextEditModule', function() {
             'normal.beforemousedown textedit.beforemousedown inputready.beforemousedown': function(e) {
                 //右键直接退出
                 if (e.isRightMB()) {
-                    e.stopPropagationImmediately();
                     return;
                 }
 
+
+                if(receiver.minderNode){
+                    var textShape = receiver.minderNode.getTextShape();
+                    if(textShape && textShape.getOpacity() === 0){
+                        receiver.minderNode.setText(receiver.minderNode.getTmpData('_lastTextContent'));
+                        receiver.minderNode.render();
+                        receiver.minderNode.getTextShape().setOpacity(1);
+                        km.layout(300);
+                    }
+
+                }
                 mouseDownStatus = true;
 
                 selectionReadyShow = sel.isShow();
@@ -6644,11 +6660,14 @@ Minder.Receiver = kity.createClass('Receiver', {
             if (browser.gecko && /\s$/.test(text)) {
                 text += '\u200b';
             }
-
-            me.minderNode.setText(text);
             if (text.length === 0) {
+                me.minderNode.setTmpData('_lastTextContent',me.textShape.getContent());
                 me.minderNode.setText('a');
+            }else {
+                me.minderNode.setText(text);
             }
+
+
             me.setContainerStyle();
             me.minderNode.getRenderContainer().bringTop();
             me.minderNode.render();
@@ -6673,7 +6692,18 @@ Minder.Receiver = kity.createClass('Receiver', {
             me.selection.clearBaseOffset();
         }
 
+        function restoreTextContent(){
+            if(me.minderNode){
+                var textShape = me.minderNode.getTextShape();
+                if(textShape && textShape.getOpacity() === 0){
+                    me.minderNode.setText(me.minderNode.getTmpData('_lastTextContent'));
+                    me.minderNode.render();
+                    me.minderNode.getTextShape().setOpacity(1);
+                    me.km.layout(300);
+                }
 
+            }
+        }
         switch (e.type) {
 
             case 'input':
@@ -6686,6 +6716,7 @@ Minder.Receiver = kity.createClass('Receiver', {
 
             case 'beforekeydown':
                 this.isTypeText = keyCode == 229 || keyCode === 0;
+
                 switch (keyCode) {
                     case keymap.Enter:
                     case keymap.Tab:
@@ -6698,12 +6729,14 @@ Minder.Receiver = kity.createClass('Receiver', {
                             this.km.setStatus('normal');
                             this.km.fire('contentchange');
                         }
+                        restoreTextContent();
                         return;
                     case keymap.left:
                     case keymap.right:
                     case keymap.up:
                     case keymap.down:
                         if(this.selection.isHide()){
+                            restoreTextContent();
                             this.km.setStatus('normal');
                             return;
                         }
@@ -6722,6 +6755,7 @@ Minder.Receiver = kity.createClass('Receiver', {
                 }
                 //针对按住shift+方向键进行处理
                 if(orgEvt.shiftKey && keymap.direction[keyCode] && this.selection.isShow()){
+
                     if(this.selection.baseOffset === null){
 
                         this.selection.baseOffset = this.selection.startOffset;
@@ -6762,6 +6796,9 @@ Minder.Receiver = kity.createClass('Receiver', {
                     this.updateSelectionShow();
                     e.preventDefault();
                     return;
+                }else if(keymap.direction[keyCode]){
+                    this.selection.baseOffset =
+                    this.selection.currentEndOffset = null;
                 }
                 if (e.originEvent.ctrlKey || e.originEvent.metaKey) {
 
@@ -6865,7 +6902,7 @@ Minder.Receiver = kity.createClass('Receiver', {
     setContainerStyle: function() {
         var textShapeBox = this.getBaseOffset('screen');
         this.container.style.cssText = ';left:' + (browser.ipad ? '-' : '') +
-            textShapeBox.x + 'px;top:' + (textShapeBox.y  ) +
+            textShapeBox.x + 'px;top:' + (textShapeBox.y) +
             'px;width:' + textShapeBox.width + 'px;height:' + textShapeBox.height + 'px;';
 
         return this;
@@ -7007,7 +7044,14 @@ Minder.Receiver = kity.createClass('Receiver', {
         var node = this.container.firstChild;
         range.setStart(node, this.selection.startOffset);
         range.setEnd(node, this.selection.endOffset);
-        range.select();
+        if(browser.gecko){
+            this.container.focus();
+            setTimeout(function(){
+                range.select();
+            });
+        }else{
+            range.select();
+        }
         return this;
     },
     updateContainerRangeBySel:function(){
@@ -10087,7 +10131,14 @@ KM.registerUI( 'contextmenu', function () {
         }
     });
     me.$container.append($menu);
-    me.on('contextmenu',function(e){
+    me.on('contextmenu', function(e) {
+        e.preventDefault();
+    });
+    me.on('mouseup', function (e) {
+        //e.preventDefault();
+        
+        if (me.getStatus() == 'hand' || !e.isRightMB()) return;
+
         var node = e.getTargetNode();
         if(node){
             this.removeAllSelectedNodes();
@@ -10119,15 +10170,14 @@ KM.registerUI( 'contextmenu', function () {
                 data:data
             }).position(e.getPosition()).show();
         }
-        e.preventDefault()
 
     });
-    me.on('click',function(){
+    me.on('afterclick',function(){
         $menu.kmui().hide();
     });
     me.on('beforemousedown',function(e){
         if(e.isRightMB()){
-            e.stopPropagationImmediately();
+            //e.stopPropagationImmediately();
         }
     })
 } );
@@ -10738,7 +10788,8 @@ KityMinder.registerProtocal('mindmanager', function() {
 });
 
 KityMinder.registerProtocal('plain', function() {
-    var LINE_ENDING = /\r\n|\r|\n/,
+    var LINE_ENDING = '\r',
+        LINE_ENDING_SPLITER = /\r\n|\r|\n/,
         TAB_CHAR = '\t';
 
     function repeat(s, n) {
@@ -10781,7 +10832,7 @@ KityMinder.registerProtocal('plain', function() {
     function decode(local) {
         var json,
             parentMap = {},
-            lines = local.split(LINE_ENDING),
+            lines = local.split(LINE_ENDING_SPLITER),
             line, level, node;
 
         function addChild(parent, child) {

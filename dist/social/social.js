@@ -86,7 +86,12 @@ $(function() {
 
         notice = (function() {
             return window.alert;
-        })();
+        })(),
+        
+        wordLimit = function (word, limit) {
+            limit = limit || 15;
+            return word.length > limit ? (word.substr(0, limit - 3) + '...') : word;
+        };
 
     start();
 
@@ -105,7 +110,7 @@ $(function() {
 
     function createFileMenu() {
         var menus = [{
-            label: '新建 (Ctrl + N)',
+            label: '新建',
             click: newFile
         }, {
             divider: true
@@ -119,16 +124,24 @@ $(function() {
                 acceptFiles.push(p.fileExtension);
             }
         });
-        menus = menus.concat([{
-            label: '导入本地文件',
-            click: function() {
+        
+        function importUseEncoding(encoding) {
+            return function() {
                 $('<input type="file" />')
                     .attr('accept', acceptFiles.join(','))
                     .on('change', function(e) {
                         e = e.originalEvent;
-                        minder.importFile(e.target.files[0]);
+                        minder.importFile(e.target.files[0], encoding);
                     }).click();
-            }
+            };
+        }
+
+        menus = menus.concat([{
+            label: '导入...',
+            click: importUseEncoding('utf8')
+        }, {
+            label: '以 GBK 编码导入...',
+            click: importUseEncoding('gbk')
         }, {
             divider: true
         }]);
@@ -338,11 +351,11 @@ $(function() {
             if (!saved) {
                 filename = '* ' + filename;
             }
-            $title.text(filename);
+            $title.text((filename));
         } else if (currentAccount) {
-            $title.text('* ' + minder.getMinderTitle());
+            $title.text(('* ' + minder.getMinderTitle()));
         } else {
-            $title.text(filename || minder.getMinderTitle());
+            $title.text((filename || minder.getMinderTitle()));
         }
 
         document.title = [filename || minder.getMinderTitle(), titleSuffix].join(' - ');
@@ -432,7 +445,7 @@ $(function() {
                     addToRecentMenu(result.list.filter(function(file) {
                         return getFileFormat(file.path) in fileLoader;
                     }));
-                    syncPreference(result.list);
+                    //syncPreference(result.list);
                 }
             },
             error: loadUserFiles
@@ -853,16 +866,16 @@ $(function() {
                 switch (keyCode) {
                     //保存
                     case KM.keymap.s:
+                        e.preventDefault();
                         if (e.shiftKey) {
                             share();
                         } else {
-                            save();
+                            setTimeout(function () { save(); });
                         }
-                        e.preventDefault();
                         break;
                     case KM.keymap.n:
-                        newFile();
                         e.preventDefault();
+                        setTimeout(function () { newFile(); });
                         break;
                 }
             }
@@ -895,7 +908,7 @@ $(function() {
             $draft_menu.append('<li disabled="disabled" class="current-draft kmui-combobox-item kmui-combobox-item-disabled kmui-combobox-checked">' +
                 '<span class="kmui-combobox-icon"></span>' +
                 '<label class="kmui-combobox-item-label">' +
-                '<span class="update-time">' + getFriendlyTimeSpan(+new Date(draft.update), +new Date()) + '</span>' + draft.name +
+                '<span class="update-time">' + getFriendlyTimeSpan(+new Date(draft.update), +new Date()) + '</span>' + wordLimit(draft.name) +
                 '</label>' +
                 '</li>');
             $draft_menu.append('<li class="kmui-divider"></li>');
@@ -907,7 +920,7 @@ $(function() {
         while (list.length) {
             draft = list.shift();
             $draft = $('<li class="draft-item">' +
-                '<a href="#">' + '<span class="update-time">' + getFriendlyTimeSpan(+new Date(draft.update), +new Date()) + '</span>' + draft.name + '</a><a class="delete" title="删除该草稿"></a></li>');
+                '<a href="#">' + '<span class="update-time">' + getFriendlyTimeSpan(+new Date(draft.update), +new Date()) + '</span>' + wordLimit(draft.name) + '</a><a class="delete" title="删除该草稿"></a></li>');
             $draft.data('draft-index', index++);
             $draft.appendTo($draft_menu);
         }
