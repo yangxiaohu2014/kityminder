@@ -30,9 +30,13 @@ KityMinder.registerModule('TextEditModule', function() {
                 .setEndOffset(textShape.getContent().length)
                 .setColor(color);
 
+
+
             receiver
                 .setMinderNode(node)
                 .updateContainerRangeBySel();
+
+            receiver.minderNode.setTmpData('_lastTextContent',receiver.textShape.getContent());
 
             km.setStatus('inputready');
 
@@ -54,10 +58,20 @@ KityMinder.registerModule('TextEditModule', function() {
             'normal.beforemousedown textedit.beforemousedown inputready.beforemousedown': function(e) {
                 //右键直接退出
                 if (e.isRightMB()) {
-                    e.stopPropagationImmediately();
                     return;
                 }
 
+
+                if(receiver.minderNode){
+                    var textShape = receiver.minderNode.getTextShape();
+                    if(textShape && textShape.getOpacity() === 0){
+                        receiver.minderNode.setText(receiver.minderNode.getTmpData('_lastTextContent'));
+                        receiver.minderNode.render();
+                        receiver.minderNode.getTextShape().setOpacity(1);
+                        km.layout(300);
+                    }
+
+                }
                 mouseDownStatus = true;
 
                 selectionReadyShow = sel.isShow();

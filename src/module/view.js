@@ -28,7 +28,7 @@ var ViewDragger = kity.createClass("ViewDragger", {
             lastPosition = null,
             currentPosition = null;
 
-        this._minder.on('normal.beforemousedown readonly.mousedown readonly.touchstart', function (e) {
+        this._minder.on('normal.mousedown readonly.mousedown readonly.touchstart', function (e) {
             e.originEvent.preventDefault(); // 阻止中键拉动
             // 点击未选中的根节点临时开启
             if (e.getTargetNode() == this.getRoot() || e.originEvent.button == 2) {
@@ -72,10 +72,7 @@ var ViewDragger = kity.createClass("ViewDragger", {
             if (isTempDrag) {
                 dragger.setEnabled(false);
                 isTempDrag = false;
-                var me = this;
-                setTimeout(function () {
-                    me.rollbackStatus();
-                });
+                this.rollbackStatus();
             }
         });
     }
