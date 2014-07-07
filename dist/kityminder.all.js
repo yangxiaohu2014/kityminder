@@ -1,6 +1,6 @@
 /*!
  * ====================================================
- * kityminder - v1.1.3 - 2014-07-03
+ * kityminder - v1.1.3 - 2014-07-07
  * https://github.com/fex-team/kityminder
  * GitHub: https://github.com/fex-team/kityminder.git 
  * Copyright (c) 2014 f-cube @ FEX; Licensed MIT
@@ -14,7 +14,7 @@ var KityMinder = window.KM = window.KityMinder = function() {
         instanceId = 0,
         uuidMap = {};
     return {
-        version: '1.1.3.1',
+        version: '1.2.0',
         uuid: function(name) {
             name = name || 'unknown';
             uuidMap[name] = uuidMap[name] || 0;
@@ -1048,6 +1048,65 @@ var Minder = KityMinder.Minder = kity.createClass('KityMinder', {
 });
 
 Utils.extend(KityMinder, {
+    compatibility: function(json) {
+
+        var version = json.version || '1.1.3';
+
+        function traverse(node, fn) {
+            fn(node);
+            if (node.children) node.children.forEach(function(child) {
+                traverse(child, fn);
+            });
+        }
+
+        /**
+         * 脑图数据升级
+         * v1.1.3 => v1.2.0
+         * */
+        function c_113_120(json) {
+            // 原本的布局风格
+            var ocs = json.data.currentstyle;
+            delete json.data.currentstyle;
+
+            // 为 1.2 选择模板，同时保留老版本文件的皮肤
+            if (ocs == 'bottom') {
+                json.template = 'structure';
+                json.theme = 'snow';
+            } else if (ocs == 'default') {
+                json.template = 'default';
+                json.theme = 'classic';
+            }
+
+            traverse(json, function(node) {
+                var data = node.data;
+
+                // 升级优先级、进度图标
+                if ('PriorityIcon' in data) {
+                    data.priority = data.PriorityIcon;
+                    delete data.PriorityIcon;
+                }
+                if ('ProgressIcon' in data) {
+                    data.progress = 1 + ((data.ProgressIcon - 1) << 1);
+                    delete data.ProgressIcon;
+                }
+
+                // 删除过时属性
+                delete data.point;
+                delete data.layout;
+            });
+        }
+
+        switch (version) {
+            case '1.1.3':
+                c_113_120(json);
+            case '1.2.0':
+        }
+
+        return json;
+    }
+});
+
+Utils.extend(KityMinder, {
     _protocals: {},
     registerProtocal: function(name, protocalDeal) {
         KityMinder._protocals[name] = protocalDeal();
@@ -1102,6 +1161,7 @@ kity.extendClass(Minder, {
 
         json.template = this.getTemplate();
         json.theme = this.getTheme();
+        json.version = KityMinder.version;
 
         if (protocal) {
             return protocal.encode(json, this);
@@ -1140,13 +1200,19 @@ kity.extendClass(Minder, {
         var stoped = this._fire(new MinderEvent('beforeimport', params, true));
         if (stoped) return this;
 
-        json = params.json || (params.json = protocal.decode(local));
+        try {
+            json = params.json || (params.json = protocal.decode(local));
+        } catch (e) {
+            return this.fire('parseerror', { message: e.message });
+        }
 
         if (typeof json === 'object' && 'then' in json) {
             var self = this;
-            json.then(local, function(data) {
+            json.then(function(data) {
                 params.json = data;
                 self._doImport(data, params);
+            }).error(function() {
+                self.fire('parseerror');
             });
         } else {
             this._doImport(json, params);
@@ -1173,6 +1239,8 @@ kity.extendClass(Minder, {
             return node;
         }
 
+        if (!json) return;
+
         this._fire(new MinderEvent('preimport', params, false));
 
         // 删除当前所有节点
@@ -1180,19 +1248,9 @@ kity.extendClass(Minder, {
             this.removeNode(this._root.getChildren()[0]);
         }
 
-        // compality for v1.1.3
-        var ocs = json.data.currentstyle; // old current-style
-        delete json.data.currentstyle;
+        json = KityMinder.compatibility(json);
 
         importNode(this._root, json, this);
-
-        if (ocs == 'bottom') {
-            json.template = 'structure';
-            json.theme = 'snow';
-        } else if (ocs == 'default') {
-            json.template = 'default';
-            json.theme = 'classic';
-        }
 
         this.setTemplate(json.template || null);
         this.setTheme(json.theme || null);
@@ -1765,11 +1823,18 @@ var keymap = KityMinder.keymap = (function(origin) {
     'End': 35,
     'Home': 36,
 
+
     'Left': 37,
     'Up': 38,
     'Right': 39,
     'Down': 40,
 
+    'direction':{
+        37:1,
+        38:1,
+        39:1,
+        40:1
+    },
     'Insert': 45,
 
     'Del': 46,
@@ -3422,7 +3487,9 @@ KityMinder.registerTheme('classic', {
 
     'order-hint-area-color': 'rgba(0, 255, 0, .5)',
     'order-hint-path-color': '#0f0',
-    'order-hint-path-width': 1
+    'order-hint-path-width': 1,
+
+    'text-selection-color': 'rgb(27,171,255)'
 });
 
 KityMinder.registerTheme('snow', {
@@ -3474,7 +3541,9 @@ KityMinder.registerTheme('snow', {
 
     'order-hint-area-color': 'rgba(0, 255, 0, .5)',
     'order-hint-path-color': '#0f0',
-    'order-hint-path-width': 1
+    'order-hint-path-width': 1,
+
+    'text-selection-color': 'rgb(27,171,255)'
 });
 
 (function() {
@@ -3500,7 +3569,7 @@ KityMinder.registerTheme('snow', {
             'main-background': hsl(h, 33, 95),
             'main-stroke': hsl(h, 37, 60),
             'main-stroke-width': 1,
-            'main-font-size': 16,
+            'main-font-size': 14,
             'main-padding': [6, 20],
             'main-margin': 20,
             'main-radius': 3,
@@ -3531,7 +3600,9 @@ KityMinder.registerTheme('snow', {
 
             'order-hint-area-color': hsl(h, 100, 95).set('a', 0.5),
             'order-hint-path-color': hsl(h, 100, 25),
-            'order-hint-path-width': 1
+            'order-hint-path-width': 1,
+
+            'text-selection-color': hsl(h, 100, 20)
         };
     }
 
@@ -3695,6 +3766,9 @@ var TextRenderer = KityMinder.TextRenderer = kity.createClass('TextRenderer', {
         this.setTextStyle(node, text.setContent(node.getText()));
         var box = text.getBoundaryBox();
         var r = Math.round;
+        if (kity.Browser.ie) {
+            box.y += 1;
+        }
         return new kity.Box(r(box.x), r(box.y), r(box.width), r(box.height));
     },
 
@@ -4586,7 +4660,7 @@ KityMinder.registerModule('PriorityModule', function() {
 
             bg = new kity.Rect()
                 .setRadius(3)
-                .setPosition(0, 0)
+                .setPosition(0.5, 0.5)
                 .setSize(this.width, this.height);
 
             number = new kity.Text()
@@ -5129,8 +5203,7 @@ var ViewDragger = kity.createClass("ViewDragger", {
 
         this._minder.on('normal.mousedown readonly.mousedown readonly.touchstart', function(e) {
             // 点击未选中的根节点临时开启
-            if (e.getTargetNode() == this.getRoot() &&
-                (!this.getRoot().isSelected() || !this.isSingleSelect())) {
+            if (e.getTargetNode() == this.getRoot()) {
                 lastPosition = e.getPosition();
                 isRootDrag = true;
             }
@@ -5458,9 +5531,11 @@ var TreeDragger = kity.createClass('TreeDragger', {
 
             this._minder.execCommand('arrange', this._dragSources, index);
             this._renderOrderHint(null);
+        } else {
+            this._minder.fire('savescene');
         }
         this._leaveDragMode();
-        this._minder.fire('treedragend');
+        this._minder.fire('contentchange');
     },
 
     // 进入拖放模式：
@@ -5703,7 +5778,11 @@ KityMinder.registerModule('DropFile', function() {
     function importMinderFile(minder, file) {
         if (!file) return;
 
-        var ext = /(.)\w+$/.exec(file.name)[0];
+        var ext = /(.)\w+$/.exec(file.name);
+        
+        if (!ext) return alert('不支持导入此类文件！');
+        
+        ext = ext[0];
 
         if ((/xmind/g).test(ext)) { //xmind zip
             importSync(minder, file, 'xmind');
@@ -5716,7 +5795,7 @@ KityMinder.registerModule('DropFile', function() {
         } else if (/txt/.test(ext)) {
             importAsync(minder, file, 'plain');
         } else {
-            alert('不支持该文件!');
+            alert('不支持导入此类文件!');
         }
     }
 
@@ -6131,12 +6210,16 @@ KityMinder.registerModule('TextEditModule', function() {
 
     function inputStatusReady(node){
         if (node && km.isSingleSelect() && node.isSelected()) {
+
+            var color = node.getStyle('text-selection-color');
+
             //准备输入状态
             var textShape = node.getTextShape();
 
             sel.setHide()
                 .setStartOffset(0)
-                .setEndOffset(textShape.getContent().length);
+                .setEndOffset(textShape.getContent().length)
+                .setColor(color);
 
             receiver
                 .setMinderNode(node)
@@ -6156,7 +6239,7 @@ KityMinder.registerModule('TextEditModule', function() {
     return {
         'events': {
             'ready': function() {
-                this._renderTarget.appendChild(receiver.container);
+                document.body.appendChild(receiver.container);
             },
 
             'normal.beforemousedown textedit.beforemousedown inputready.beforemousedown': function(e) {
@@ -6190,8 +6273,7 @@ KityMinder.registerModule('TextEditModule', function() {
                     textShape.setStyle('cursor', 'default');
                     if (this.isSingleSelect() && node.isSelected()) {
                         sel.collapse();
-
-
+                        sel.setColor(node.getStyle('text-selection-color'));
                         receiver
                             .setMinderNode(node)
                             .setCurrentIndex(e.getPosition(this.getRenderContainer()))
@@ -6202,8 +6284,11 @@ KityMinder.registerModule('TextEditModule', function() {
 
                         if(selectionReadyShow){
                             textShape.setStyle('cursor', 'text');
+                            sel.clearBaseOffset();
                             receiver.updateSelection();
-
+                            setTimeout(function() {
+                                sel.setShow();
+                            }, 200);
                             km.setStatus('textedit');
 
                         }
@@ -6241,18 +6326,25 @@ KityMinder.registerModule('TextEditModule', function() {
                 }
             },
             'normal.mouseup textedit.mouseup inputready.mouseup': function(e) {
+
                 mouseDownStatus = false;
 
                 var node = e.getTargetNode();
 
 
                 if (node && !selectionReadyShow && receiver.isReady()) {
-
                     sel.collapse();
+
+                    sel.setColor(node.getStyle('text-selection-color'));
+
+                    sel.clearBaseOffset();
 
                     node.getTextShape().setStyle('cursor', 'text');
 
                     receiver.updateSelection();
+                    setTimeout(function() {
+                        sel.setShow();
+                    }, 200);
 
 
                     lastEvtPosition = e.getPosition(this.getRenderContainer());
@@ -6265,7 +6357,16 @@ KityMinder.registerModule('TextEditModule', function() {
                 //当选中节点后，输入状态准备
                 if(sel.isHide()){
                     inputStatusReady(e.getTargetNode());
+                }else {
+                    //当有光标时，要同步选区
+                    if(!sel.collapsed){
+                        sel.clearBaseOffset();
+                        receiver.updateContainerRangeBySel();
+                    }
+
+
                 }
+
 
 
 
@@ -6349,7 +6450,7 @@ KityMinder.registerModule('TextEditModule', function() {
             'blur': function() {
                 receiver.clear();
             },
-            'import': function() {
+            'textedit.import': function() {
                 km.setStatus('normal');
                 receiver.clear();
             },
@@ -6463,6 +6564,7 @@ Minder.Receiver = kity.createClass('Receiver', {
         this.range = range;
         range.setStart(text || this.container, this.index).collapse(true);
         var me = this;
+
         setTimeout(function() {
             me.container.focus();
             range.select();
@@ -6516,12 +6618,13 @@ Minder.Receiver = kity.createClass('Receiver', {
     },
     keyboardEvents: function(e) {
 
-        clearTimeout(this.timer);
+
         var me = this;
         var orgEvt = e.originEvent;
         var keyCode = orgEvt.keyCode;
 
         function setTextToContainer() {
+            clearTimeout(me.timer);
             if (!me.range.hasNativeRange()) {
                 return;
             }
@@ -6564,9 +6667,10 @@ Minder.Receiver = kity.createClass('Receiver', {
             me.updateSelection();
             me.timer = setTimeout(function() {
                 me.selection.setShow();
-            }, 300);
+            }, 200);
 
             me.km.setStatus('textedit');
+            me.selection.clearBaseOffset();
         }
 
 
@@ -6585,10 +6689,6 @@ Minder.Receiver = kity.createClass('Receiver', {
                 switch (keyCode) {
                     case keymap.Enter:
                     case keymap.Tab:
-                    case keymap.left:
-                    case keymap.right:
-                    case keymap.up:
-                    case keymap.down:
                         if(this.selection.isShow()){
                             this.clear();
                             this.km.setStatus('inputready');
@@ -6599,7 +6699,16 @@ Minder.Receiver = kity.createClass('Receiver', {
                             this.km.fire('contentchange');
                         }
                         return;
-                    case keymap.Shift:
+                    case keymap.left:
+                    case keymap.right:
+                    case keymap.up:
+                    case keymap.down:
+                        if(this.selection.isHide()){
+                            this.km.setStatus('normal');
+                            return;
+                        }
+                        break;
+                   // case keymap.Shift:
                     case keymap.Control:
                     case keymap.Alt:
                     case keymap.Cmd:
@@ -6611,7 +6720,49 @@ Minder.Receiver = kity.createClass('Receiver', {
                         }
                         return;
                 }
+                //针对按住shift+方向键进行处理
+                if(orgEvt.shiftKey && keymap.direction[keyCode] && this.selection.isShow()){
+                    if(this.selection.baseOffset === null){
 
+                        this.selection.baseOffset = this.selection.startOffset;
+                        this.selection.currentEndOffset = this.selection.endOffset;
+                    }
+                    var textlength = this.textShape.getContent().length;
+                    if(keymap.right  == keyCode ){
+                        this.selection.currentEndOffset++;
+                        if(this.selection.currentEndOffset > textlength){
+                            this.selection.currentEndOffset = textlength;
+                        }
+
+                    }else if(keymap.left == keyCode){
+                        this.selection.currentEndOffset--;
+                        if(this.selection.currentEndOffset < 0){
+                            this.selection.currentEndOffset = 0;
+                        }
+
+                    }else if(keymap.up == keyCode){
+                        this.selection.currentEndOffset = 0;
+                        this.selection.baseOffset = this.selection.endOffset;
+                    }else{
+                        this.selection.currentEndOffset = textlength;
+                    }
+
+                    if(this.selection.currentEndOffset >= this.selection.baseOffset){
+                        this.selection.setEndOffset(this.selection.currentEndOffset);
+                        if(this.selection.currentEndOffset == this.selection.baseOffset){
+                            this.selection.setStartOffset(this.selection.baseOffset);
+                        }
+                    }else{
+                        this.selection.setStartOffset(this.selection.currentEndOffset);
+                        this.selection.setEndOffset(this.selection.baseOffset);
+                    }
+
+                    this.updateContainerRangeBySel();
+
+                    this.updateSelectionShow();
+                    e.preventDefault();
+                    return;
+                }
                 if (e.originEvent.ctrlKey || e.originEvent.metaKey) {
 
                     //粘贴
@@ -6712,24 +6863,10 @@ Minder.Receiver = kity.createClass('Receiver', {
         return this;
     },
     setContainerStyle: function() {
-        var textShapeBox = this.getBaseOffset('paper');
+        var textShapeBox = this.getBaseOffset('screen');
         this.container.style.cssText = ';left:' + (browser.ipad ? '-' : '') +
-            textShapeBox.x + 'px;top:' + (textShapeBox.y + textShapeBox.height * 0.1) +
+            textShapeBox.x + 'px;top:' + (textShapeBox.y  ) +
             'px;width:' + textShapeBox.width + 'px;height:' + textShapeBox.height + 'px;';
-
-        if (!this.selection.isShow()) {
-            var paperContainer = this.km.getPaper();
-            var width = paperContainer.node.parentNode.clientWidth;
-            var height = paperContainer.node.parentNode.clientHeight;
-            if (width < this.container.offsetWidth + this.container.offsetLeft) {
-                this.km.getRenderContainer().translate(width / -3, 0);
-                this.setContainerStyle();
-            } else if (height < this.container.offsetTop + this.container.offsetHeight) {
-                this.km.getRenderContainer().translate(0, height / -3);
-                this.setContainerStyle();
-            }
-        }
-
 
         return this;
     },
@@ -6846,7 +6983,8 @@ Minder.Receiver = kity.createClass('Receiver', {
             endOffset = this.textData[this.selection.endOffset],
             width = 0;
         if (this.selection.collapsed) {
-            this.selection.updateShow(startOffset || this.textData[this.textData.length - 1], 1);
+
+            this.selection.updateShow(startOffset || this.textData[this.textData.length - 1], 2);
             return this;
         }
         if (!endOffset) {
@@ -6901,8 +7039,7 @@ Minder.Selection = kity.createClass( 'Selection', {
         this.callBase();
         this.height = height || 20;
         this.setAttr('id','_kity_selection');
-        this.stroke( color || 'rgb(27,171,255)', width || 1 );
-        this.width = 0;
+        this.width = 2;
         this.fill('rgb(27,171,255)');
         this.setHide();
         this.timer = null;
@@ -6913,11 +7050,12 @@ Minder.Selection = kity.createClass( 'Selection', {
         this._show = false;
 
     },
+    setColor:function(color){
+        this.fill(color);
+    },
     collapse : function(toEnd){
-
-        this.stroke( 'rgb(27,171,255)', 1 );
         this.setOpacity(1);
-        this.width = 1;
+        this.width = 2;
         this.collapsed = true;
         if(toEnd){
             this.startOffset = this.endOffset;
@@ -6937,7 +7075,6 @@ Minder.Selection = kity.createClass( 'Selection', {
             return this;
         }
         this.collapsed = false;
-        this.stroke('none',0);
         this.setOpacity(0.5);
         return this;
     },
@@ -6952,7 +7089,7 @@ Minder.Selection = kity.createClass( 'Selection', {
             return this;
         }
         this.collapsed = false;
-        this.stroke('none',0);
+//        this.stroke('none',0);
         this.setOpacity(0.5);
         return this;
     },
@@ -6961,19 +7098,14 @@ Minder.Selection = kity.createClass( 'Selection', {
             this.setShowHold();
         }
         this.setPosition(offset).setWidth(width);
-        //解决在框选内容时，出现很窄的光标
-        if(width === 0){
-            this.setOpacity(0);
-        }else{
-            this.setOpacity(0.5);
-        }
         this.bringTop();
         return this;
     },
     setPosition: function ( offset ) {
         try {
-            this.x = offset.x;
-            this.y = offset.y;
+            // 这两个是神奇的 0.5 —— SVG 要边缘锐利，你需要一些对齐
+            this.x = Math.round(offset.x) - 0.5;
+            this.y = Math.round(offset.y) - 1.5;
 
         } catch ( e ) {
            console.log(e);
@@ -6982,7 +7114,7 @@ Minder.Selection = kity.createClass( 'Selection', {
         return this;
     },
     setHeight: function ( height ) {
-        this.height = height;
+        this.height = Math.round(height) + 2;
         return this;
     },
     setHide: function () {
@@ -7001,6 +7133,7 @@ Minder.Selection = kity.createClass( 'Selection', {
         clearInterval( this.timer );
         var me = this,
             state = '';
+
         me.setStyle( 'display', '' );
         me._show = true;
         if(this.collapsed){
@@ -7017,6 +7150,9 @@ Minder.Selection = kity.createClass( 'Selection', {
     },
     isHide:function(){
         return !this._show;
+    },
+    clearBaseOffset:function(){
+        this.baseOffset = this.currentEndOffset = null;
     }
 } );
 
@@ -7260,6 +7396,10 @@ KityMinder.registerModule('Zoom', function() {
             finishValue: zoom / 100,
             setter: function(target, value) {
                 viewport.zoom = value;
+                viewport.center = {
+                    x: viewport.center.x | 0 + 0.5,
+                    y: viewport.center.y | 0 + 0.5
+                };
                 target.setViewPort(viewport);
             }
         });
@@ -7640,6 +7780,7 @@ KityMinder.registerModule( "pasteModule", function () {
                             break;
                         case keys.x:
                             getNodes(km.getSelectedAncestors(),true);
+                            km.layout(300);
                             _curstatus = true;
                             break;
                         case keys.v:
@@ -7648,7 +7789,7 @@ KityMinder.registerModule( "pasteModule", function () {
                                 if(node){
                                     km.fire('saveScene');
                                     for(var i= 0,ni;ni=_cacheNodes[i++];){
-                                        appendChildNode(node,ni);
+                                        appendChildNode(node,ni.clone());
                                     }
                                     km.layout(300);
                                     km.select(_selectedNodes,true);
@@ -9651,7 +9792,8 @@ KM.registerToolbarUI('forecolor', function (name) {
         var content = url.split(',')[1];
         var $form = $('<form></form>').attr({
             'action': 'download.php',
-            'method': 'POST'
+            'method': 'POST',
+            'accept-charset': 'utf-8'
         });
 
         var $content = $('<input />').attr({
@@ -9671,6 +9813,8 @@ KM.registerToolbarUI('forecolor', function (name) {
             type: 'hidden',
             value: filename
         }).appendTo($form);
+
+        $('<input name="iehack" value="&#9760;" />').appendTo($form);
 
         $form.appendTo('body').submit().remove();
     }
@@ -9829,9 +9973,9 @@ KM.registerToolbarUI('template theme', function(name) {
 
 KM.registerToolbarUI('node', function(name) {
     var shortcutKeys = {
-        'appendsiblingnode': 'enter',
-        'appendchildnode': 'tab',
-        'removenode': 'del|backspace',
+        'appendsiblingnode': 'Enter',
+        'appendchildnode': 'Tab',
+        'removenode': 'Del',
         'editnode': 'F2'
     };
 
@@ -9896,8 +10040,6 @@ KM.registerToolbarUI('node', function(name) {
     //comboboxWidget.button().kmui().disabled(-1);
     return comboboxWidget.button().addClass('kmui-combobox');
 
-
-
     function transForInserttopic(options) {
 
         var tempItems = [];
@@ -9905,7 +10047,7 @@ KM.registerToolbarUI('node', function(name) {
         utils.each(options.items, function(k, v) {
             options.value.push(v);
 
-            tempItems.push((msg[k] || k) + '(' + shortcutKeys[v].toUpperCase() + ')');
+            tempItems.push((msg[k] || k) + ' (' + shortcutKeys[v] + ')');
             options.autowidthitem.push($.wordCountAdaptive(tempItems[tempItems.length - 1]));
         });
 
@@ -10248,132 +10390,134 @@ KM.registerToolbarUI( 'zoom', function ( name ) {
 } );
 
 /*
-
     http://www.xmind.net/developer/
-
     Parsing XMind file
-
-    XMind files are generated in XMind Workbook (.xmind) format, an open format that is based on the principles of OpenDocument. It consists of a ZIP compressed archive containing separate XML documents for content and styles, a .jpg image file for thumbnails, and directories for related attachments.
+    XMind files are generated in XMind Workbook (.xmind) format, an open format
+    that is based on the principles of OpenDocument. It consists of a ZIP
+    compressed archive containing separate XML documents for content and styles,
+    a .jpg image file for thumbnails, and directories for related attachments.
  */
 
-KityMinder.registerProtocal( 'xmind', function () {
+KityMinder.registerProtocal('xmind', function() {
 
     // 标签 map
     var markerMap = {
-         'priority-1'   : ['PriorityIcon', 1]
-        ,'priority-2'   : ['PriorityIcon', 2]
-        ,'priority-3'   : ['PriorityIcon', 3]
-        ,'priority-4'   : ['PriorityIcon', 4]
-        ,'priority-5'   : ['PriorityIcon', 5]
+        'priority-1': ['priority', 1],
+        'priority-2': ['priority', 2],
+        'priority-3': ['priority', 3],
+        'priority-4': ['priority', 4],
+        'priority-5': ['priority', 5],
+        'priority-6': ['priority', 6],
+        'priority-7': ['priority', 7],
+        'priority-8': ['priority', 8],
 
-        ,'task-start'   : ['ProgressIcon', 1]
-        ,'task-quarter' : ['ProgressIcon', 2]
-        ,'task-half'    : ['ProgressIcon', 3]
-        ,'task-3quar'   : ['ProgressIcon', 4]
-        ,'task-done'    : ['ProgressIcon', 5]
-
-        ,'task-oct'     : null
-        ,'task-3oct'    : null
-        ,'task-5oct'    : null
-        ,'task-7oct'    : null
+        'task-start': ['progress', 1],
+        'task-oct': ['progress', 2],
+        'task-quarter': ['progress', 3],
+        'task-3oct': ['progress', 4],
+        'task-half': ['progress', 5],
+        'task-5oct': ['progress', 6],
+        'task-3quar': ['progress', 7],
+        'task-7oct': ['progress', 8],
+        'task-done': ['progress', 9]
     };
-
-    function getAttachedNode( arr ){
-        for (var i = 0; i < arr.length; i++) {
-            if( arr[ i ].type == "attached" )
-                return arr[ i ]
-        }
-    }
-
-    function processTopic(topic, obj){
-
-        //处理文本
-        obj.data =  { text : topic.title };
-
-        // 处理标签
-        if(topic.marker_refs && topic.marker_refs.marker_ref){
-            var markers = topic.marker_refs.marker_ref;
-            if( markers.length && markers.length > 0 ){
-                for (var i in markers) {
-                    var type = markerMap[ markers[i]['marker_id'] ];
-                    type && (obj.data[ type[0] ] = type[1]);
-                }
-            }else{
-                var type = markerMap[ markers['marker_id'] ];
-                type && (obj.data[ type[0] ] = type[1]);
-            }
-        }
-
-        // 处理超链接
-        if(topic['xlink:href']){
-            obj.data.hyperlink = topic['xlink:href'];
-        }
-
-        //处理子节点
-        var topics;
-        if( topic.children && (topics=topic.children.topics) && ( topics.topic || (utils.isArray( topics ) && topics.length>0) ) ){
-            var tmp = topics.topic || (getAttachedNode( topics )).topic;
-            if( tmp.length && tmp.length > 0 ){ //多个子节点
-                obj.children = [];
-
-                for(var i in tmp){
-                    obj.children.push({});
-                    processTopic(tmp[i], obj.children[i]);
-                }
-
-            }else{ //一个子节点
-                obj.children = [{}];
-                processTopic(tmp, obj.children[0]);
-            }
-        }
-    }
-
-    function xml2km(xml){
-        var json = $.xml2json(xml);
-        var result = {};
-        var sheet = json.sheet;
-        var topic = utils.isArray(sheet) ? sheet[0].topic : sheet.topic;
-        processTopic(topic, result);
-        return result;
-    }
-
-    function onerror(){
-        km.fire('unziperror');
-    }
-
-    function getEntries(file, onend) {
-        zip.createReader(new zip.BlobReader(file), function(zipReader) {
-            zipReader.getEntries(onend);
-        }, onerror);
-    }
 
     return {
         fileDescription: 'xmind格式文件',
         fileExtension: '.xmind',
-        
-        decode: function ( local ) {
 
+        decode: function(local) {
+            var successCall, errorCall;
+
+
+            function processTopic(topic, obj) {
+
+                //处理文本
+                obj.data = {
+                    text: topic.title
+                };
+
+                // 处理标签
+                if (topic.marker_refs && topic.marker_refs.marker_ref) {
+                    var markers = topic.marker_refs.marker_ref;
+                    if (markers.length && markers.length > 0) {
+                        for (var i in markers) {
+                            var type = markerMap[markers[i]['marker_id']];
+                            type && (obj.data[type[0]] = type[1]);
+                        }
+                    } else {
+                        var type = markerMap[markers['marker_id']];
+                        type && (obj.data[type[0]] = type[1]);
+                    }
+                }
+
+                // 处理超链接
+                if (topic['xlink:href']) {
+                    obj.data.hyperlink = topic['xlink:href'];
+                }
+                //处理子节点
+                var topics = topic.children && topic.children.topics;
+                var subTopics = topics && (topics.topic || topics[0] && topics[0].topic);
+                if (subTopics) {
+                    var tmp = subTopics;
+                    if (tmp.length && tmp.length > 0) { //多个子节点
+                        obj.children = [];
+
+                        for (var i in tmp) {
+                            obj.children.push({});
+                            processTopic(tmp[i], obj.children[i]);
+                        }
+
+                    } else { //一个子节点
+                        obj.children = [{}];
+                        processTopic(tmp, obj.children[0]);
+                    }
+                }
+            }
+
+            function xml2km(xml) {
+                var json = $.xml2json(xml);
+                var result = {};
+                var sheet = json.sheet;
+                var topic = utils.isArray(sheet) ? sheet[0].topic : sheet.topic;
+                processTopic(topic, result);
+                return result;
+            }
+
+            function onerror() {
+                errorCall('ziperror');
+            }
+
+            function getEntries(file, onend) {
+                zip.createReader(new zip.BlobReader(file), function(zipReader) {
+                    zipReader.getEntries(onend);
+                }, onerror);
+            }
             return {
-                then : function(local, callback){
+                then: function(callback) {
 
-                    getEntries( local, function( entries ) {
+                    getEntries(local, function(entries) {
                         var hasMainDoc = false;
-                        entries.forEach(function( entry ) {
-                            if(entry.filename == 'content.xml'){
+                        entries.forEach(function(entry) {
+                            if (entry.filename == 'content.xml') {
                                 hasMainDoc = true;
                                 entry.getData(new zip.TextWriter(), function(text) {
-                                    try{
+                                    try {
                                         var km = xml2km($.parseXML(text));
-                                        callback && callback( km );
-                                    }catch(e){
-                                        km.fire('parseerror');
-                                    }                                    
+                                        callback && callback(km);
+                                    } catch (e) {
+                                        errorCall && errorCall('parseerror');
+                                    }
                                 });
                             }
                         });
 
-                        !hasMainDoc && km.fire('parseerror');
+                        !hasMainDoc && errorCall && errorCall('parseerror');
                     });
+                    return this;
+                },
+                error: function(callback) {
+                    errorCall = callback;
                 }
             };
 
@@ -10381,11 +10525,8 @@ KityMinder.registerProtocal( 'xmind', function () {
         // recognize: recognize,
         recognizePriority: -1
     };
-    
-} );
 
-
-
+});
 
 /*
 
@@ -10395,66 +10536,68 @@ KityMinder.registerProtocal( 'xmind', function () {
 
 */
 
-KityMinder.registerProtocal( 'freemind', function () {
+KityMinder.registerProtocal('freemind', function() {
 
     // 标签 map
     var markerMap = {
-         'full-1'   : ['PriorityIcon', 1]
-        ,'full-2'   : ['PriorityIcon', 2]
-        ,'full-3'   : ['PriorityIcon', 3]
-        ,'full-4'   : ['PriorityIcon', 4]
-        ,'full-5'   : ['PriorityIcon', 5]
-        ,'full-6'   : null
-        ,'full-7'   : null
-        ,'full-8'   : null
-        ,'full-9'   : null
-        ,'full-0'   : null
+        'full-1': ['priority', 1],
+        'full-2': ['priority', 2],
+        'full-3': ['priority', 3],
+        'full-4': ['priority', 4],
+        'full-5': ['priority', 5],
+        'full-6': ['priority', 6],
+        'full-7': ['priority', 7],
+        'full-8': ['priority', 8]
     };
 
-    function processTopic(topic, obj){
+    function processTopic(topic, obj) {
 
         //处理文本
-        obj.data =  { text : topic.TEXT };
+        obj.data = {
+            text: topic.TEXT
+        };
+        var i;
 
         // 处理标签
-        if(topic.icon){
+        if (topic.icon) {
             var icons = topic.icon;
-            if(icons.length && icons.length > 0){
-                for (var i in icons) {
-                    var type = markerMap[ icons[i]['BUILTIN'] ];
-                    type && (obj.data[ type[0] ] = type[1]);
+            var type;
+            if (icons.length && icons.length > 0) {
+                for (i in icons) {
+                    type = markerMap[icons[i].BUILTIN];
+                    if (type) obj.data[type[0]] = type[1];
                 }
-            }else{
-                var type = markerMap[ icons['BUILTIN'] ];
-                type && (obj.data[ type[0] ] = type[1]);
+            } else {
+                type = markerMap[icons.BUILTIN];
+                if (type) obj.data[type[0]] = type[1];
             }
         }
-        
+
         // 处理超链接
-        if(topic.LINK){
+        if (topic.LINK) {
             obj.data.hyperlink = topic.LINK;
         }
 
         //处理子节点
-        if( topic.node ){
+        if (topic.node) {
 
             var tmp = topic.node;
-            if( tmp.length && tmp.length > 0 ){ //多个子节点
+            if (tmp.length && tmp.length > 0) { //多个子节点
                 obj.children = [];
 
-                for(var i in tmp){
+                for (i in tmp) {
                     obj.children.push({});
                     processTopic(tmp[i], obj.children[i]);
                 }
 
-            }else{ //一个子节点
+            } else { //一个子节点
                 obj.children = [{}];
                 processTopic(tmp, obj.children[0]);
             }
         }
     }
 
-    function xml2km(xml){
+    function xml2km(xml) {
         var json = $.xml2json(xml);
         var result = {};
         processTopic(json.node, result);
@@ -10465,272 +10608,263 @@ KityMinder.registerProtocal( 'freemind', function () {
         fileDescription: 'freemind格式文件',
         fileExtension: '.mm',
 
-        decode: function ( local ) {
-            try{
-                return xml2km( local );
-            }catch(e){
-                km.fire('parseerror');
-                return undefined;
-            }
+        decode: function(local) {
+            return xml2km(local);
         },
         // recognize: null,
         recognizePriority: -1
     };
-    
-} );
 
+});
 
-
-
+/* global zip:true */
 /*
-
     http://www.mindjet.com/mindmanager/
-
     mindmanager的后缀为.mmap，实际文件格式是zip，解压之后核心文件是Document.xml
-
 */
+KityMinder.registerProtocal('mindmanager', function() {
 
-KityMinder.registerProtocal( 'mindmanager', function () {
+    var successCall, errorCall;
 
     // 标签 map
     var markerMap = {
-        'urn:mindjet:Prio1': [ 'PriorityIcon', 1 ],
-        'urn:mindjet:Prio2': [ 'PriorityIcon', 2 ],
-        'urn:mindjet:Prio3': [ 'PriorityIcon', 3 ],
-        'urn:mindjet:Prio4': [ 'PriorityIcon', 4 ],
-        'urn:mindjet:Prio5': [ 'PriorityIcon', 5 ],
-        '0': [ 'ProgressIcon', 1 ],
-        '25': [ 'ProgressIcon', 2 ],
-        '50': [ 'ProgressIcon', 3 ],
-        '75': [ 'ProgressIcon', 4 ],
-        '100': [ 'ProgressIcon', 5 ]
+        'urn:mindjet:Prio1': ['PriorityIcon', 1],
+        'urn:mindjet:Prio2': ['PriorityIcon', 2],
+        'urn:mindjet:Prio3': ['PriorityIcon', 3],
+        'urn:mindjet:Prio4': ['PriorityIcon', 4],
+        'urn:mindjet:Prio5': ['PriorityIcon', 5],
+        '0': ['ProgressIcon', 1],
+        '25': ['ProgressIcon', 2],
+        '50': ['ProgressIcon', 3],
+        '75': ['ProgressIcon', 4],
+        '100': ['ProgressIcon', 5]
     };
 
-    function processTopic( topic, obj ) {
+    function processTopic(topic, obj) {
         //处理文本
         obj.data = {
             text: topic.Text && topic.Text.PlainText || ''
         }; // 节点默认的文本，没有Text属性
 
         // 处理标签
-        if ( topic.Task ) {
+        if (topic.Task) {
 
             var type;
-            if ( topic.Task.TaskPriority ) {
-                type = markerMap[ topic.Task.TaskPriority ];
-                type && ( obj.data[ type[ 0 ] ] = type[ 1 ] );
+            if (topic.Task.TaskPriority) {
+                type = markerMap[topic.Task.TaskPriority];
+                if (type) obj.data[type[0]] = type[1];
             }
 
-            if ( topic.Task.TaskPercentage ) {
-                type = markerMap[ topic.Task.TaskPercentage ];
-                type && ( obj.data[ type[ 0 ] ] = type[ 1 ] );
+            if (topic.Task.TaskPercentage) {
+                type = markerMap[topic.Task.TaskPercentage];
+                if (type) obj.data[type[0]] = type[1];
             }
         }
 
         // 处理超链接
-        if ( topic.Hyperlink ) {
+        if (topic.Hyperlink) {
             obj.data.hyperlink = topic.Hyperlink.Url;
         }
 
         //处理子节点
-        if ( topic.SubTopics && topic.SubTopics.Topic ) {
+        if (topic.SubTopics && topic.SubTopics.Topic) {
 
             var tmp = topic.SubTopics.Topic;
-            if ( tmp.length && tmp.length > 0 ) { //多个子节点
+            if (tmp.length && tmp.length > 0) { //多个子节点
                 obj.children = [];
 
-                for ( var i in tmp ) {
-                    obj.children.push( {} );
-                    processTopic( tmp[ i ], obj.children[ i ] );
+                for (var i in tmp) {
+                    obj.children.push({});
+                    processTopic(tmp[i], obj.children[i]);
                 }
 
             } else { //一个子节点
-                obj.children = [ {} ];
-                processTopic( tmp, obj.children[ 0 ] );
+                obj.children = [{}];
+                processTopic(tmp, obj.children[0]);
             }
         }
     }
 
-    function xml2km( xml ) {
-        var json = $.xml2json( xml );
+    function xml2km(xml) {
+        var json = $.xml2json(xml);
         var result = {};
-        processTopic( json.OneTopic.Topic, result );
+        processTopic(json.OneTopic.Topic, result);
         return result;
     }
 
-    function onerror(){
-        km.fire('unziperror');
+    function onerror() {
+        errorCall('ziperror');
     }
 
-    function getEntries( file, onend ) {
-        zip.createReader( new zip.BlobReader( file ), function ( zipReader ) {
-            zipReader.getEntries( onend );
-        }, onerror );
+    function getEntries(file, onend) {
+        zip.createReader(new zip.BlobReader(file), function(zipReader) {
+            zipReader.getEntries(onend);
+        }, onerror);
     }
 
     return {
         fileDescription: 'mindmanager格式文件',
         fileExtension: '.mmap',
-
-        decode: function ( local ) {
-
+        decode: function(local) {
             return {
-                then: function ( local, callback ) {
-
-                    getEntries( local, function ( entries ) {
+                then: function(callback) {
+                    successCall = callback;
+                    getEntries(local, function(entries) {
                         var hasMainDoc = false;
-                        entries.forEach( function ( entry ) {
-                            if ( entry.filename == 'Document.xml' ) {
+                        entries.forEach(function(entry) {
+                            if (entry.filename == 'Document.xml') {
                                 hasMainDoc = true;
-                                entry.getData( new zip.TextWriter(), function ( text ) {
-                                    try{
-                                        var km = xml2km( $.parseXML( text ) );
-                                        callback && callback( km );
-                                    }catch(e){
-                                        km.fire('parseerror');
+                                entry.getData(new zip.TextWriter(), function(text) {
+                                    try {
+                                        var km = xml2km($.parseXML(text));
+                                        if (successCall) successCall(km);
+                                    } catch (e) {
+                                        if (errorCall) errorCall('parseerror');
                                     }
-                                } );
+                                });
                             }
-                        } );
-                        !hasMainDoc && km.fire('parseerror');
-                    } );
+                        });
+                        if (!hasMainDoc && errorCall) errorCall('parseerror');
+                    });
+                    return this;
+                },
+                error: function(callback) {
+                    errorCall = callback;
                 }
             };
-
         },
-        // recognize: recognize,
         recognizePriority: -1
     };
+});
 
-} );
+KityMinder.registerProtocal('plain', function() {
+    var LINE_ENDING = /\r\n|\r|\n/,
+        TAB_CHAR = '\t';
 
-KityMinder.registerProtocal( "plain", function () {
-	var LINE_ENDING = '\n',
-		TAB_CHAR = '\t';
+    function repeat(s, n) {
+        var result = '';
+        while (n--) result += s;
+        return result;
+    }
 
-	function repeat( s, n ) {
-		var result = "";
-		while ( n-- ) result += s;
-		return result;
-	}
+    function encode(json, level) {
+        var local = '';
+        level = level || 0;
+        local += repeat(TAB_CHAR, level);
+        local += json.data.text + LINE_ENDING;
+        if (json.children) {
+            json.children.forEach(function(child) {
+                local += encode(child, level + 1);
+            });
+        }
+        return local;
+    }
 
-	function encode( json, level ) {
-		var local = "";
-		level = level || 0;
-		local += repeat( TAB_CHAR, level );
-		local += json.data.text + LINE_ENDING;
-		if ( json.children ) {
-			json.children.forEach( function ( child ) {
-				local += encode( child, level + 1 );
-			} );
-		}
-		return local;
-	}
+    function isEmpty(line) {
+        return !/\S/.test(line);
+    }
 
-	function isEmpty( line ) {
-		return !/\S/.test( line );
-	}
+    function getLevel(line) {
+        var level = 0;
+        while (line.charAt(level) === TAB_CHAR) level++;
+        return level;
+    }
 
-	function getLevel( line ) {
-		var level = 0;
-		while ( line.charAt( level ) === TAB_CHAR ) level++;
-		return level;
-	}
+    function getNode(line) {
+        return {
+            data: {
+                text: line.replace(new RegExp('^' + TAB_CHAR + '*'), '')
+            }
+        };
+    }
 
-	function getNode( line ) {
-		return {
-			data: {
-				text: line.replace( new RegExp( '^' + TAB_CHAR + '*' ), '' )
-			}
-		};
-	}
+    function decode(local) {
+        var json,
+            parentMap = {},
+            lines = local.split(LINE_ENDING),
+            line, level, node;
 
-	function decode( local ) {
-		var json,
-			parentMap = {},
-			lines = local.split( LINE_ENDING ),
-			line, level, node;
+        function addChild(parent, child) {
+            var children = parent.children || (parent.children = []);
+            children.push(child);
+        }
 
-		function addChild( parent, child ) {
-			var children = parent.children || ( parent.children = [] );
-			children.push( child );
-		}
+        for (var i = 0; i < lines.length; i++) {
+            line = lines[i];
+            if (isEmpty(line)) continue;
 
-		for ( var i = 0; i < lines.length; i++ ) {
-			line = lines[ i ];
-			if ( isEmpty( line ) ) continue;
+            level = getLevel(line);
+            node = getNode(line);
 
-			level = getLevel( line );
-			node = getNode( line );
+            if (level === 0) {
+                if (json) {
+                    throw new Error('Invalid local format');
+                }
+                json = node;
+            } else {
+                if (!parentMap[level - 1]) {
+                    throw new Error('Invalid local format');
+                }
+                addChild(parentMap[level - 1], node);
+            }
+            parentMap[level] = node;
+        }
+        return json;
+    }
+    var lastTry, lastResult;
 
-			if ( level === 0 ) {
-				if ( json ) {
-					throw new Error( 'Invalid local format' );
-				}
-				json = node;
-			} else {
-				if ( !parentMap[ level - 1 ] ) {
-					throw new Error( 'Invalid local format' );
-				}
-				addChild( parentMap[ level - 1 ], node );
-			}
-			parentMap[ level ] = node;
-		}
-		return json;
-	}
-	var lastTry, lastResult;
+    function recognize(local) {
+        if (!Utils.isString(local)) return false;
+        lastTry = local;
+        try {
+            lastResult = decode(local);
+        } catch (e) {
+            lastResult = null;
+        }
+        return !!lastResult;
+    }
 
-	function recognize( local ) {
-		if ( !Utils.isString( local ) ) return false;
-		lastTry = local;
-		try {
-			lastResult = decode( local );
-		} catch ( e ) {
-			lastResult = null;
-		}
-		return !!lastResult;
-	}
-	return {
-		fileDescription: '大纲文本',
-		fileExtension: '.txt',
+    return {
+        fileDescription: '大纲文本',
+        fileExtension: '.txt',
         mineType: 'text/plain',
-		encode: function ( json ) {
-			return encode( json, 0 );
-		},
-		decode: function ( local ) {
-			if ( lastTry == local && lastResult ) {
-				return lastResult;
-			}
-			return decode( local );
-		},
-		recognize: recognize,
-		recognizePriority: -1
-	};
-} );
+        encode: function(json) {
+            return encode(json, 0);
+        },
+        decode: function(local) {
+            if (lastTry == local && lastResult) {
+                return lastResult;
+            }
+            return decode(local);
+        },
+        recognize: recognize,
+        recognizePriority: -1
+    };
+});
 
-KityMinder.registerProtocal( 'json', function () {
-	function filter( key, value ) {
-		if ( key == 'layout' || key == 'shicon' ) {
-			return undefined;
-		}
-		return value;
-	}
-	return {
-		fileDescription: 'KityMinder',
-		fileExtension: '.km',
+KityMinder.registerProtocal('json', function() {
+    function filter(key, value) {
+        if (key == 'layout' || key == 'shicon') {
+            return undefined;
+        }
+        return value;
+    }
+    return {
+        fileDescription: 'KityMinder',
+        fileExtension: '.km',
         mineType: 'application/json',
-		encode: function ( json ) {
-			return JSON.stringify( json, filter );
-		},
-		decode: function ( local ) {
-			return JSON.parse( local );
-		},
-		recognize: function ( local ) {
-			return Utils.isString( local ) && local.charAt( 0 ) == '{' && local.charAt( local.length - 1 ) == '}';
-		},
-		recognizePriority: 0
-	};
-} );
+        encode: function(json) {
+            return JSON.stringify(json, filter);
+        },
+        decode: function(local) {
+            return JSON.parse(local);
+        },
+        recognize: function(local) {
+            return Utils.isString(local) && local.charAt(0) == '{' && local.charAt(local.length - 1) == '}';
+        },
+        recognizePriority: 0
+    };
+});
 
 if (!kity.Browser.ie) {
     KityMinder.registerProtocal('png', function() {

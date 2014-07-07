@@ -150,7 +150,7 @@ $(function() {
         menus = menus.concat([{
             divider: true,
         }, {
-            label: '登陆',
+            label: '请登录',
             click: login,
             id: 'net-hint-buttom'
         }, {
@@ -174,7 +174,7 @@ $(function() {
 
         $file_btn = $('<button id="file-btn">文件</button>').addClass('dropdown').appendTo($menu);
 
-        $file_menu = $.kmuidropmenu({ data: createFileMenu() })
+        $file_menu = $.kmuidropmenu({data: createFileMenu()})
             .addClass('file-menu')
             .appendTo('body');
 
@@ -712,13 +712,26 @@ $(function() {
         minder.execCommand('camera', minder.getRoot(), 300);
     }
 
-    function generateRemotePath() {
-        var filename = window.prompt("请输入文件名: ", minder.getMinderTitle()) || minder.getMinderTitle();
+    function generateRemotePath(filename) {
         return '/apps/kityminder/' + filename + '.km';
     }
 
     function save() {
-        if (!currentAccount || save.busy) return;
+        if (!currentAccount) return alert('请先登录！');
+        if (save.busy) {
+            return;
+        }
+
+        var uploadPath, filename;
+
+        // 确定上传文件名
+        if (!remotePath) {
+            filename = window.prompt('请输入文件名: ', minder.getMinderTitle());
+            if (!filename) return;
+            uploadPath = generateRemotePath(filename);
+        } else {
+            uploadPath = remotePath;
+        }
 
         save.busy = true;
 
@@ -745,7 +758,7 @@ $(function() {
                 upload.tryCount = 0;
                 return;
             }
-            var uploadPath = remotePath || generateRemotePath();
+
             $title.loading('正在保存 “' + getFileName(uploadPath) + '” ...');
             sto.uploadTextFile(data, uploadPath, {
                 ondup: remotePath ? sto.constant.ONDUP_OVERWRITE : sto.constant.ONDUP_NEWCOPY,
