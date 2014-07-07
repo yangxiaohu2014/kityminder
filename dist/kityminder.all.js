@@ -1203,7 +1203,7 @@ kity.extendClass(Minder, {
         try {
             json = params.json || (params.json = protocal.decode(local));
         } catch (e) {
-            return this.fire('parseerror');
+            return this.fire('parseerror', e.message);
         }
 
         if (typeof json === 'object' && 'then' in json) {
@@ -10738,7 +10738,7 @@ KityMinder.registerProtocal('mindmanager', function() {
 });
 
 KityMinder.registerProtocal('plain', function() {
-    var LINE_ENDING = '\n',
+    var LINE_ENDING = /\r\n|\r|\n/,
         TAB_CHAR = '\t';
 
     function repeat(s, n) {
