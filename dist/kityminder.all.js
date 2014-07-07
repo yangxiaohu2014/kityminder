@@ -1203,7 +1203,7 @@ kity.extendClass(Minder, {
         try {
             json = params.json || (params.json = protocal.decode(local));
         } catch (e) {
-            return this.fire('parseerror', e.message);
+            return this.fire('parseerror', { message: e.message });
         }
 
         if (typeof json === 'object' && 'then' in json) {
@@ -6450,7 +6450,7 @@ KityMinder.registerModule('TextEditModule', function() {
             'blur': function() {
                 receiver.clear();
             },
-            'import': function() {
+            'textedit.import': function() {
                 km.setStatus('normal');
                 receiver.clear();
             },
