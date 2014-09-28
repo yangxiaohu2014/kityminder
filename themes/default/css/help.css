@@ -7,6 +7,7 @@
 .shortcuts-group {
 	padding-right: 15px;
     width: 220px;
+    font-size: 14px;
 }
 .shortcuts-thead {
     font-size: 14px;
@@ -69,6 +70,7 @@ body {
     background-color: #fff;
     border-radius: 3px;
     border: 1px inset #999;
+    margin: 0px 7px;
 }
 .right {
     float: right;

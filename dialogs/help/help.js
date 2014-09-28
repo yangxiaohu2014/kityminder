@@ -30,8 +30,7 @@
         var reg_tcell = /\:/g;
         // 3、匹配键值
         var reg_key = /\`(.+?)\`/g;
-        // var 4、匹配快捷键组合选择
-        var reg_opt= /or|\+|,/gi;
+        // 4、匹配快捷键组合选择
         // 菜单分类标题1
         var temp = '';
         var xmlhttp;
@@ -109,38 +108,7 @@
                 this.root().html( html );
             },
             initEvent: function ( km, $w ) {
-                // var margin = 10px;
-                // var table = $("table");//这里是区块名称
-                // var table_W = table[0].offsetWidth + margin;//取区块的实际宽度（包含间距，这里使用源生的offsetWidth函数，不适用jQuery的width()函数是因为它不能取得实际宽度，例如元素内有pandding就不行了）
-                // alert("me"); 
-                // function pbl(){//瀑布流布局函数
-                //     var h = [];//记录区块高度的数组
-                //     var n = 2;//两列显示
-                //     for(var i = 0;i < table.length;i++) {//有多少个table就循环多少次
-                //         table_H = table[i].offsetHeight;//获取每个table的高度
-                //         if(i < 2) {//n是一行最多的table，所以小于n就是第一行了
-                //             h[i] = table_H;//把每个li放到数组里面
-                //             table.eq(i).css("top",0);//第一行的Li的top值为0
-                //             table.eq(i).css("left",i * table_W);//第i个li的左坐标就是i*li的宽度
-                //             }
-                //         else{
-                //             min_H = Math.min.apply(null,h) ;//取得数组中的最小值，区块中高度值最小的那个
-                //             minKey = getarraykey(h, min_H);//最小的值对应的指针
-                //             h[minKey] += table_H + margin ;//加上新高度后更新高度值
-                //             table.eq(i).css("top",min_H + margin);//先得到高度最小的Li，然后把接下来的li放到它的下面
-                //             table.eq(i).css("left",minKey * table_W); //第i个li的左坐标就是i*li的宽度
-                //         }
-                //     }
-                // }
 
-                // /* 使用for in运算返回数组中某一值的对应项数(比如算出最小的高度值是数组里面的第几个) */
-                // function getarraykey(s, v) {
-                //     for(k in s) {
-                //         if(s[k] == v) {
-                //             return k;
-                //         }
-                //     }
-                // }
             },
             width: 1000
         } );
